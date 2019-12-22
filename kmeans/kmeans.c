@@ -1,3 +1,4 @@
+#include <time.h>
 #include <err.h>
 #include <fcntl.h>
 #include <float.h>
@@ -29,13 +30,13 @@ float *loadData(char *fileName, unsigned nbVec, unsigned dim)
     return tab;
 }
 
-void writeClassinFloatFormat(unsigned char *data, unsigned nbelt, char *fileName) 
+void writeClassinFloatFormat(unsigned char *data, unsigned nbelt, char *fileName)
 {
     FILE *fp = fopen(fileName, "w");
     if (!fp)
         err(1, "Cannot create File: %s\n", fileName);
 
-    for(unsigned i = 0; i < nbelt; ++i) 
+    for(unsigned i = 0; i < nbelt; ++i)
     {
         float f = data[i];
         fwrite(&f, sizeof(float), 1, fp);
@@ -44,10 +45,11 @@ void writeClassinFloatFormat(unsigned char *data, unsigned nbelt, char *fileName
     fclose(fp);
 }
 
-double distance(float *vec1, float *vec2, unsigned dim) 
+double distance(float *vec1, float *vec2, unsigned dim)
 {
     double dist = 0;
-    for(unsigned i = 0; i < dim; ++i, ++vec1, ++vec2) 
+
+    for(unsigned i = 0; i < dim; ++i, ++vec1, ++vec2)
     {
         double d = *vec1 - *vec2;
         dist += d * d;
@@ -56,16 +58,24 @@ double distance(float *vec1, float *vec2, unsigned dim)
     return sqrt(dist);
 }
 
+/**
+** \brief Get closer cluster from a vector.
+** \param vec The vector to find its cluster.
+** \param means The array of the components of cluster vectors.
+** \param dim The number of dimensions.
+** \param K The number of clusters.
+** \param e Current error.
+*/
 unsigned char classify(float *vec, float *means, unsigned dim,
-                       unsigned char K, double *e) 
+                       unsigned char K, double *e)
 {
     unsigned char min = 0;
     float dist, distMin = FLT_MAX;
 
-    for(unsigned i = 0; i < K; ++i) 
+    for(unsigned i = 0; i < K; ++i)
     {
         dist = distance(vec, means + i * dim, dim);
-        if(dist < distMin) 
+        if (dist < distMin)
         {
             distMin = dist;
             min = i;
@@ -96,46 +106,57 @@ unsigned char *Kmeans(float *data, unsigned nbVec, unsigned dim,
     unsigned *card = malloc(sizeof(unsigned) * K);
     unsigned char* c = malloc(sizeof(unsigned char) * nbVec);
 
-    // Random init of c
+    // Put each vector in a random cluster
+    // c[vector_id] = cluster_id
+    // cluser_id can be [0, 1, 2]
     for(unsigned i = 0; i < nbVec; ++i)
         c[i] = rand() / (RAND_MAX + 1.) * K;
 
+    // For each cluster, init mean
+    // means[cluster_id][dimension] = sum of all values of elements in cluster
     for(unsigned i = 0; i < dim * K; ++i)
         means[i] = 0.;
 
+    // For each cluster, number of elements
+    // card[cluster_id] = number of elements
     for(unsigned i = 0; i < K; ++i)
         card[i] = 0.;
 
-    for(unsigned i = 0; i < nbVec; ++i) 
+    // Fill means[cluster_id][dimension] = sum of ...
+    for(unsigned i = 0; i < nbVec; ++i)
     {
         for(unsigned j = 0; j < dim; ++j)
+        {
             means[c[i] * dim + j] += data[i * dim  + j];
-        ++card[c[i]];
+        }
+        card[c[i]]++;
     }
 
     for(unsigned i = 0; i < K; ++i)
         for(unsigned j = 0; j < dim; ++j)
             means[i * dim + j] /= card[i];
 
-    while ((iter < maxIter) && (diffErr > minErr)) 
+    // Execute loop maxIterm times except if diffErr <= minErr
+    while ((iter < maxIter) && (diffErr > minErr))
     {
         double t1 = omp_get_wtime();
         diffErr = err;
-        // Classify data
+
+        // Find the nearest cluster of each vector
         err = 0.;
-        for(unsigned i = 0; i < nbVec; ++i) 
+        for(unsigned i = 0; i < nbVec; ++i)
         {
             c[i] = classify(data + i * dim, means, dim, K, &e);
             err += e;
         }
 
-        // update Mean
+        // Reset means and card
         for(unsigned i = 0; i < dim * K; ++i)
             means[i] = 0.;
-
         for(unsigned i = 0; i < K; ++i)
             card[i] = 0.;
 
+        // Update means
         for(unsigned i = 0; i < nbVec; ++i) 
         {
             for(unsigned j = 0; j < dim; ++j)
@@ -162,9 +183,11 @@ unsigned char *Kmeans(float *data, unsigned nbVec, unsigned dim,
 
 int main(int ac, char *av[])
 {
+    // Check args
     if (ac != 8)
         errx(1, "Usage :\n\t%s <K: int> <maxIter: int> <minErr: float> <dim: int> <nbvec:int> <datafile> <outputClassFile>\n", av[0]);
 
+    // Get args
     unsigned maxIter = atoi(av[2]);
     double minErr = atof(av[3]);
     unsigned K = atoi(av[1]);
@@ -174,6 +197,9 @@ int main(int ac, char *av[])
     printf("Start Kmeans on %s datafile [K = %d, dim = %d, nbVec = %d]\n", av[6], K, dim, nbVec);
 
     float *tab = loadData(av[6], nbVec, dim);
+
+    // Compute cluster for each vector
+    srand(time(0));
     unsigned char * classif = Kmeans(tab, nbVec, dim, K, minErr, maxIter);
 
     writeClassinFloatFormat(classif, nbVec, av[7]);
