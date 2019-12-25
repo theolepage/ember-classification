@@ -74,6 +74,7 @@ struct kmeans_state
 
     unsigned char *assignment;
     float *centroids;
+    float *centroids_sum;
     unsigned *centroids_count;
 
     float *upper_bounds;
@@ -123,8 +124,7 @@ static void point_all_ctrs(
     {
         if (c == min_dist_index)
             continue;
-
-        float tmp_dist = distance(vectors + i * state->vect_dim,
+float tmp_dist = distance(vectors + i * state->vect_dim,
                 state->centroids + c * state->vect_dim,
                 state->vect_dim);
         if (tmp_dist < min_dist)
@@ -164,7 +164,7 @@ static void move_centers(struct kmeans_state *state)
 static void update_bounds(struct kmeans_state *state)
 {
     // r = argmax(p(c))
-    float max = DBL_MAX;
+    float max = 0;
     unsigned max_index = 0;
     for (unsigned c = 0; c < state->K; c++)
     {
@@ -178,7 +178,7 @@ static void update_bounds(struct kmeans_state *state)
     unsigned r = max_index;
 
     // r_prime = argmax(p(c)) c != r
-    max = DBL_MAX;
+    max = 0;
     max_index = 0;
     for (unsigned c = 0; c < state->K; c++)
     {
@@ -226,7 +226,8 @@ unsigned char *Kmeans(
     state->vect_count = vect_count;
     state->vect_dim = vect_dim;
     state->assignment = calloc(vect_count, sizeof(unsigned char)); // a
-    state->centroids = calloc(K * vect_dim, sizeof(float)); // c and c'
+    state->centroids = calloc(K * vect_dim, sizeof(float)); // c
+    state->centroids_sum = calloc(K * vect_dim, sizeof(float)); // c'
     state->centroids_count = calloc(K, sizeof(unsigned)); // q
     state->upper_bounds = calloc(vect_count, sizeof(float)); // u
     state->lower_bounds = calloc(vect_count, sizeof(float)); // l
@@ -238,6 +239,7 @@ unsigned char *Kmeans(
     double diffErr = DBL_MAX;
     double err = DBL_MAX;
     double *min_dist = calloc(vect_count, sizeof(double));
+
 
     // Question: Initialize upper_bounds (with INFINITY values)  and assignment?
     // Question: Is it a problem if I use one array of both c and c'?
@@ -263,12 +265,11 @@ unsigned char *Kmeans(
     {
         float *c_vec = vectors + centroids_index[i] * state->vect_dim;
         for (unsigned j = 0; j < state->vect_dim; j++)
-            state->centroids[i * state->vect_dim + j] = c_vec[j];
+            state->centroids_sum[i * state->vect_dim + j] = c_vec[j];
     }
     free(centroids_index);
 
     // Initialize (Algorithm 2)
-    state->centroids_count[0] = vect_count;
     for (unsigned i = 0; i < vect_count; i++)
     {
         state->upper_bounds[i] = INFINITY;
