@@ -58,34 +58,6 @@ double distance(float *vec1, float *vec2, unsigned dim)
     return sqrt(dist);
 }
 
-/**
-** \brief Get closer cluster from a vector.
-** \param vec The vector to find its cluster.
-** \param means The array of the components of cluster vectors.
-** \param dim The number of dimensions.
-** \param K The number of clusters.
-** \param e Current error.
-*/
-unsigned char classify(float *vec, float *means, unsigned dim,
-                       unsigned char K, double *e)
-{
-    unsigned char min = 0;
-    float dist, distMin = FLT_MAX;
-
-    for(unsigned i = 0; i < K; ++i)
-    {
-        dist = distance(vec, means + i * dim, dim);
-        if (dist < distMin)
-        {
-            distMin = dist;
-            min = i;
-        }
-    }
-
-    *e = distMin;
-    return min;
-}
-
 static inline void print_result(int iter, double time, float err)
 {
     if (getenv("TEST") != NULL)
@@ -119,11 +91,12 @@ struct kmeans_state
 static void point_all_ctrs(
         float *vectors,
         unsigned i,
-        struct kmeans_state *state
+        struct kmeans_state *state,
+        double *e
 )
 {
     // Update assignment
-    float min_dist = 0;
+    float min_dist = FLT_MAX;
     unsigned char min_dist_index = 0;
     for (unsigned c = 0; c < state->K; c++)
     {
@@ -136,6 +109,7 @@ static void point_all_ctrs(
             min_dist_index = c;
         }
     }
+    *e = min_dist;
     state->assignment[i] = min_dist_index;
 
     // Update upper bound
@@ -241,7 +215,9 @@ unsigned char *Kmeans(
         float *vectors,
         unsigned vect_count,
         unsigned vect_dim,
-        unsigned char K
+        unsigned char K,
+        double min_err,
+        unsigned max_iter
 )
 {
     // Init state and allocate memory
@@ -256,15 +232,46 @@ unsigned char *Kmeans(
     state->lower_bounds = calloc(vect_count, sizeof(float)); // l
     state->p = calloc(K, sizeof(float)); // p
     state->s = calloc(K, sizeof(float)); // s
+    unsigned inter = 0;
+    double e = 0;
+    double diffErr = DBL_MAX;
+    double err = DBL_MAX;
+    double *min_dist = calloc(vect_count, sizeof(double));
 
     // Question: Initialize upper_bounds (with INFINITY values)  and assignment?
     // Question: Is it a problem if I use one array of both c and c'?
+
+    // Init randoml the centers.
+    int centroids_index = calloc(state->K, sizeof(int));
+    for (int i = 0; i < state->K; i++)
+    {
+        int centroids_index[i] = rand() / (RAND_MAX + 1.) * vect_count;
+        // Check that the given index is unique in the array.
+        for (int j = 0; j < i; j++)
+        {
+            // If the index is already used by another centroids,
+            // choose another value (restart the loop from i)
+            if (centroids_index[i] == centroids_index[j])
+            {
+                i -= 1;
+                break;
+            }
+        }
+    }
+    for (int i = 0; i < state->K; i++)
+    {
+        float *c_vec = vectors[centroids_index[i] * state->vec_dim]
+        for (int j = 0; j < state->vec_dim; j++)
+            state->centroids[i * state->vec_dim + j] = c_vec[j];
+    }
+    free(centroids_index);
 
     // Initialize (Algorithm 2)
     state->centroids_count[0] = vect_count;
     for (unsigned i = 0; i < vect_count; i++)
     {
-        point_all_ctrs(vectors, i, state);
+        point_all_ctrs(vectors, i, state, &e);
+        min_dist[i] = e;
 
         unsigned char c = state->assignment[i];
         state->centroids_count[c]++;
@@ -274,11 +281,11 @@ unsigned char *Kmeans(
     }
 
     // Main loop
-    int converged = 0;
-    while (!converged)
+    while ((iter < maxIter) && (diffErr > minErr))
     {
-        converged = 1;
-
+        double t1 = omp_get_wtime();
+        diffErr = err;
+        err = 0;
         // Update s
         for (unsigned c1 = 0; c1 < K; c1++)
         {
@@ -314,6 +321,7 @@ unsigned char *Kmeans(
                 {
                     unsigned char old_assignment = state->assignment[i];
                     point_all_ctrs(vectors, i, state);
+                    min_dist[i] = e;
                     unsigned char curr_assignment = state->assignment[i];
 
                     // Update centroids
@@ -331,9 +339,15 @@ unsigned char *Kmeans(
                 }
             }
         }
-
+        for (int i = 0; i < state->vect_count; i++)
+            err += min_dist[i];
+        err /= state->vect_count;
+        double t2 = omp_get_wtime();
+        diffErr = fabs(diffErr - err);
+        print_result(iter, t2 - t1, err);
         move_centers(state);
         update_bounds(state);
+        iter += 1;
     }
 
     // Free state memory
@@ -364,11 +378,13 @@ int main(int argc, char *argv[])
     char *input = argv[6];
     char *output = argv[7];
 
+    srand(time(0));
+
     // Run K-means algorithm
     printf("Start Kmeans on %s datafile [K = %d, dim = %d, nbVec = %d]\n",
             input, K, vect_dim, vect_dim);
     float *data = loadData(input, vect_count, vect_dim);
-    unsigned char *res = Kmeans(data, vect_count, vect_dim, K);
+    unsigned char *res = Kmeans(data, vect_count, vect_dim, K, min_err, max_iter);
 
     // Save output and free memory
     writeClassinFloatFormat(res, vect_count, output);
