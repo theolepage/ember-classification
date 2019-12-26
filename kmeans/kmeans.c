@@ -186,6 +186,37 @@ static void update_bounds(struct kmeans_state *state, float max_moved)
 }
 
 /**
+** \brief Initialize centroids before k-means algorithm.
+** \param vectors The feature vectors data.
+** \param state A pointer to the struct representing algorithm's state.
+**/
+static void init_centroids(float *vectors, struct kmeans_state *state)
+{
+    int *centroids_index = calloc(state->K, sizeof(int));
+    for (int i = 0; i < state->K; i++)
+    {
+        centroids_index[i] = rand() / (RAND_MAX + 1.) * state->vect_count;
+
+        // Check that the given index is unique in the array.
+        for (int j = 0; j < i; j++)
+        {
+            if (centroids_index[i] == centroids_index[j])
+            {
+                i--;
+                break;
+            }
+        }
+    }
+    for (int i = 0; i < state->K; i++)
+    {
+        float *c_vec = vectors + centroids_index[i] * state->vect_dim;
+        for (unsigned j = 0; j < state->vect_dim; j++)
+            state->centroids[i * state->vect_dim + j] = c_vec[j];
+    }
+    free(centroids_index);
+}
+
+/**
 ** \brief Run k-means algorithm (Hamerly's version).
 ** \param vectors The feature vectors data.
 ** \param vect_count The number of feature vectors.
@@ -215,40 +246,14 @@ unsigned char *kmeans(
     state->p = calloc(K, sizeof(float));
     state->s = calloc(K, sizeof(float));
 
-    // Init randomly the centers.
-    int *centroids_index = calloc(state->K, sizeof(int));
-    for (int i = 0; i < state->K; i++)
-    {
-        state->s[i] = FLT_MAX;
-        centroids_index[i] = rand() / (RAND_MAX + 1.) * vect_count;
-
-        // Check that the given index is unique in the array.
-        for (int j = 0; j < i; j++)
-        {
-            if (centroids_index[i] == centroids_index[j])
-            {
-                i--;
-                break;
-            }
-        }
-    }
-    for (int i = 0; i < state->K; i++)
-    {
-        float *c_vec = vectors + centroids_index[i] * state->vect_dim;
-        for (unsigned j = 0; j < state->vect_dim; j++)
-            state->centroids[i * state->vect_dim + j] = c_vec[j];
-    }
-    free(centroids_index);
-
     // Initialize
+    init_centroids(vectors, state);
     state->centroids_count[0] = vect_count;
     for (unsigned i = 0; i < vect_count; i++)
-    {
         state->upper_bounds[i] = FLT_MAX;
+    for (unsigned c = 0; c < K; c++)
+        state->s[c] = FLT_MAX;
 
-    }
-
-    // Missing: nextClusterCenters
     unsigned iter = 0;
     unsigned change_cluster = 1;
 
