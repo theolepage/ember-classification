@@ -1,27 +1,37 @@
-#include <time.h>
-#include <err.h>
-#include <fcntl.h>
-#include <float.h>
-#include <limits.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <float.h>
+#include <math.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <omp.h>
-#include <unistd.h>
+#include <time.h>
+#include <err.h>
 
-float *loadData(char *fileName, unsigned nbVec, unsigned dim)
+#include "kmeans.h"
+
+/**
+** \brief Load vectors data from a file.
+** \param filename The path to the input file.
+** \param vect_count The number of vectors to load.
+** \param vect_dim The dimension of the vectors.
+** \return A pointer to an array of all vectors values.
+**/
+static float *load_data(char *filename, unsigned vect_count, unsigned vect_dim)
 {
-    int fd = open(fileName, O_RDONLY);
+    int fd = open(filename, O_RDONLY);
     if (fd == -1)
-        err(1, "Error while opening %s", fileName);
+        err(1, "Error while opening %s", filename);
 
     struct stat st;
-    if (fstat(fd, &st) != -1 && nbVec * dim * sizeof(float) > (size_t)st.st_size)
+    size_t total_size = vect_count * vect_dim * sizeof(float);
+    if (fstat(fd, &st) != -1 && total_size > (size_t) st.st_size)
         errx(1, "Error in parameters");
 
-    void *tab = mmap(NULL, nbVec * dim * sizeof(float), PROT_READ,
+    void *tab = mmap(NULL, vect_count * vect_dim * sizeof(float), PROT_READ,
                      MAP_SHARED, fd, 0);
     if (tab == MAP_FAILED)
         err(1, "Error while mmap");
@@ -30,13 +40,23 @@ float *loadData(char *fileName, unsigned nbVec, unsigned dim)
     return tab;
 }
 
-void writeClassinFloatFormat(unsigned char *data, unsigned nbelt, char *fileName)
+/**
+** \brief Save k-means results to a file.
+** \param data The array of assignments.
+** \param vect_count The number of vectors in data.
+** \param filename The path to the output file.
+**/
+static void save_output(
+        unsigned char *data,
+        unsigned vect_count,
+        char *filename
+)
 {
-    FILE *fp = fopen(fileName, "w");
+    FILE *fp = fopen(filename, "w");
     if (!fp)
-        err(1, "Cannot create File: %s\n", fileName);
+        err(1, "Cannot create file: %s\n", filename);
 
-    for(unsigned i = 0; i < nbelt; ++i)
+    for(unsigned i = 0; i < vect_count; ++i)
     {
         float f = data[i];
         fwrite(&f, sizeof(float), 1, fp);
@@ -45,46 +65,41 @@ void writeClassinFloatFormat(unsigned char *data, unsigned nbelt, char *fileName
     fclose(fp);
 }
 
-double distance(float *vec1, float *vec2, unsigned dim)
+/**
+** \brief Compute the euclidean distance between two vectors.
+** \param vec1 The first vector.
+** \param vec2 The second vector.
+** \param dim The dimension of both vectors.
+** \return The distance between vec1 and vec2.
+**/
+static double distance(float *vec1, float *vec2, unsigned dim)
 {
     double dist = 0;
-
     for(unsigned i = 0; i < dim; ++i, ++vec1, ++vec2)
     {
         double d = *vec1 - *vec2;
         dist += d * d;
     }
-
     return sqrt(dist);
 }
 
+/**
+** \brief Print debugging information for each iteration.
+** \param iter The id of the iteration.
+** \param time The time of the iteration execution.
+** \param change The number of changes applied during the iteration.
+**/
 static inline void print_result(int iter, double time, unsigned change)
 {
     if (getenv("TEST") != NULL)
-        printf("{\"iteration\": \"%d\", \"time\": \"%lf\", \"change\": \"%d\"}\n", iter, time, change);
+        printf("{\"iteration\": \"%d\", \"time\": \"%lf\", \"change\": \
+        \"%d\"}\n", iter, time, change);
     else
         printf("Iteration: %d, Time: %lf, Change: %d\n", iter, time, change);
 }
 
-struct kmeans_state
-{
-    unsigned vect_count;
-    unsigned vect_dim;
-    unsigned char K;
-
-    unsigned char *assignment;
-    float *centroids;
-    float *centroids_sum;
-    unsigned *centroids_count;
-
-    float *upper_bounds;
-    float *lower_bounds;
-    float *p;
-    float *s;
-};
-
 /**
-** \brief Update upper and lower bounds of a vector and its assignment.
+** \brief Update assignment and the bounds of a vector.
 ** \param vectors The feature vectors data.
 ** \param i The index of the current vector.
 ** \param state A pointer to the struct representing algorithm's state.
@@ -95,16 +110,17 @@ static void point_all_ctrs(
         struct kmeans_state *state
 )
 {
-    // Update assignment
     float min_dist = FLT_MAX;
     float min_dist_p = FLT_MAX;
-
     unsigned char min_dist_index = 0;
+
+    // Find the two closest centroids
     for (unsigned c = 0; c < state->K; c++)
     {
         float tmp_dist = distance(vectors + i * state->vect_dim,
                 state->centroids + c * state->vect_dim,
                 state->vect_dim);
+
         if (tmp_dist < min_dist)
         {
             min_dist_p = min_dist;
@@ -116,39 +132,50 @@ static void point_all_ctrs(
     }
 
     // Update assignment and bounds
-    state->assignment[i] = min_dist_index;
     state->upper_bounds[i] = min_dist;
+    state->assignment[i] = min_dist_index;
     state->lower_bounds[i] = min_dist_p;
 }
 
+/**
+** \brief Update centroids during k-means algorithm.
+** \param state A pointer to the struct representing algorithm's state.
+** \return The maximum distance a centroid moved.
+**/
 static float move_centers(struct kmeans_state *state)
 {
     float max_moved = 0;
-    // Make a copy of current centroid
-    float *old_centroid = calloc(state->vect_dim, sizeof(float));
+
     for (unsigned c = 0; c < state->K; c++)
     {
-        // Compute new centroid
+        // Compute new centroid centers
         for (unsigned d = 0; d < state->vect_dim; d++)
         {
-            old_centroid[d] = state->centroids[c * state->vect_dim + d];
-            unsigned count = state->centroids_count[c];
-            float value = state->centroids_sum[c * state->vect_dim + d] / count;
-            state->centroids[c * state->vect_dim + d] = value;
+            float count = state->centroids_count[c];
+            float res = 0;
+            if (count)
+                res = state->centroids_next[c * state->vect_dim + d] / count;
+            state->centroids_next[c * state->vect_dim + d] = res;
         }
 
-        // Store difference between old and new centroid
-        float dist = distance(old_centroid,
-                state->centroids + c * state->vect_dim,
+        // Compute distance between old and new centroid
+        state->p[c] = distance(state->centroids + c * state->vect_dim,
+                state->centroids_next + c * state->vect_dim,
                 state->vect_dim);
-        if (dist > max_moved)
-            max_moved = dist;
-        state->p[c] = dist;
+
+        // Update max_moved
+        if (state->p[c] > max_moved)
+            max_moved = state->p[c];
     }
-    free(old_centroid);
+
     return max_moved;
 }
 
+/**
+** \brief Update bounds during k-means algorithm.
+** \param max_moved The maximum distance a centroid moved.
+** \param state A pointer to the struct representing algorithm's state.
+**/
 static void update_bounds(struct kmeans_state *state, float max_moved)
 {
     for (unsigned i = 0; i < state->vect_count; i++)
@@ -159,13 +186,14 @@ static void update_bounds(struct kmeans_state *state, float max_moved)
 }
 
 /**
-** \brief K-means algorithm (Hamerly's version)
+** \brief Run k-means algorithm (Hamerly's version).
 ** \param vectors The feature vectors data.
 ** \param vect_count The number of feature vectors.
 ** \param vect_dim The number of features (dimension of vectors).
 ** \param K The number of clusters.
+** \param max_iter The number of maximum iterations.
 **/
-unsigned char *Kmeans(
+unsigned char *kmeans(
         float *vectors,
         unsigned vect_count,
         unsigned vect_dim,
@@ -178,14 +206,14 @@ unsigned char *Kmeans(
     state->K = K;
     state->vect_count = vect_count;
     state->vect_dim = vect_dim;
-    state->assignment = calloc(vect_count, sizeof(unsigned char)); // a
-    state->centroids = calloc(K * vect_dim, sizeof(float)); // c
-    state->centroids_sum = calloc(K * vect_dim, sizeof(float)); // c'
-    state->centroids_count = calloc(K, sizeof(unsigned)); // q
-    state->upper_bounds = malloc(vect_count * sizeof(float)); // u
-    state->lower_bounds = calloc(vect_count, sizeof(float)); // l
-    state->p = calloc(K, sizeof(float)); // p
-    state->s = calloc(K, sizeof(float)); // s
+    state->assignment = calloc(vect_count, sizeof(unsigned char));
+    state->centroids = calloc(K * vect_dim, sizeof(float));
+    state->centroids_next = calloc(K * vect_dim, sizeof(float));
+    state->centroids_count = calloc(K, sizeof(unsigned));
+    state->upper_bounds = malloc(vect_count * sizeof(float));
+    state->lower_bounds = calloc(vect_count, sizeof(float));
+    state->p = calloc(K, sizeof(float));
+    state->s = calloc(K, sizeof(float));
 
     // Init randomly the centers.
     int *centroids_index = calloc(state->K, sizeof(int));
@@ -193,11 +221,10 @@ unsigned char *Kmeans(
     {
         state->s[i] = FLT_MAX;
         centroids_index[i] = rand() / (RAND_MAX + 1.) * vect_count;
+
         // Check that the given index is unique in the array.
         for (int j = 0; j < i; j++)
         {
-            // If the index is already used by another centroids,
-            // choose another value (restart the loop from i)
             if (centroids_index[i] == centroids_index[j])
             {
                 i--;
@@ -217,9 +244,7 @@ unsigned char *Kmeans(
     state->centroids_count[0] = vect_count;
     for (unsigned i = 0; i < vect_count; i++)
     {
-        // state->assignments[i] = 0;
         state->upper_bounds[i] = FLT_MAX;
-        // state->lower_bounds[i] = 0;
 
     }
 
@@ -248,12 +273,12 @@ unsigned char *Kmeans(
             }
         }
 
-        // Missing: reset nextClusterCenters
 
-        // Update centroids if necessary
+        // Apply k-means algorithm for each vector
         for (unsigned i = 0; i < vect_count; i++)
         {
-            float m = fmax(state->s[state->assignment[i]] / 2, state->lower_bounds[i]);
+            float m = fmax(state->s[state->assignment[i]] / 2,
+                    state->lower_bounds[i]);
 
             // First bound test
             if (state->upper_bounds[i] > m)
@@ -283,17 +308,22 @@ unsigned char *Kmeans(
 
         // Update centroids
         for (unsigned i = 0; i < K * vect_dim; i++)
-            state->centroids_sum[i] = 0;
+            state->centroids_next[i] = 0;
         for (unsigned i = 0; i < vect_count; i++)
+        {
             for (unsigned d = 0; d < vect_dim; d++)
-                state->centroids_sum[state->assignment[i] * vect_dim + d] += vectors[i * vect_dim + d];
-
+            {
+                unsigned index = state->assignment[i] * vect_dim + d;
+                state->centroids_next[index] += vectors[i * vect_dim + d];
+            }
+        }
         float max_moved = move_centers(state);
         update_bounds(state, max_moved);
 
-        // Reset s
         for (unsigned j = 0; j < state->K; j++)
             state->s[j] = FLT_MAX;
+        memcpy(state->centroids, state->centroids_next,
+                sizeof(float) * vect_dim * K);
 
         // Print debug
         double t2 = omp_get_wtime();
@@ -304,6 +334,7 @@ unsigned char *Kmeans(
     // Free state memory
     unsigned char *res = state->assignment;
     free(state->centroids);
+    free(state->centroids_next);
     free(state->centroids_count);
     free(state->upper_bounds);
     free(state->lower_bounds);
@@ -329,16 +360,15 @@ int main(int argc, char *argv[])
     char *input = argv[6];
     char *output = argv[7];
 
-    srand(time(0));
-
     // Run K-means algorithm
     printf("Start Kmeans on %s datafile [K = %d, dim = %d, nbVec = %d]\n",
             input, K, vect_dim, vect_count);
-    float *data = loadData(input, vect_count, vect_dim);
-    unsigned char *res = Kmeans(data, vect_count, vect_dim, K, max_iter);
+    float *data = load_data(input, vect_count, vect_dim);
+    srand(time(0));
+    unsigned char *res = kmeans(data, vect_count, vect_dim, K, max_iter);
 
     // Save output and free memory
-    writeClassinFloatFormat(res, vect_count, output);
+    save_output(res, vect_count, output);
     munmap(data, vect_count * vect_dim * sizeof(float));
     free(res);
 
