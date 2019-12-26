@@ -15,7 +15,7 @@ float *loadData(char *fileName, unsigned nbVec, unsigned dim)
 {
     int fd = open(fileName, O_RDONLY);
     if (fd == -1)
-        err(1, "Error while openning %s", fileName);
+        err(1, "Error while opening %s", fileName);
 
     struct stat st;
     if (fstat(fd, &st) != -1 && nbVec * dim * sizeof(float) > (size_t)st.st_size)
@@ -58,12 +58,12 @@ double distance(float *vec1, float *vec2, unsigned dim)
     return sqrt(dist);
 }
 
-static inline void print_result(int iter, double time, float err)
+static inline void print_result(int iter, double time, unsigned change)
 {
     if (getenv("TEST") != NULL)
-        printf("{\"iteration\": \"%d\", \"time\": \"%lf\", \"error\": \"%f\"}\n", iter, time, err);
+        printf("{\"iteration\": \"%d\", \"time\": \"%lf\", \"change\": \"%d\"}\n", iter, time, change);
     else
-        printf("Iteration: %d, Time: %lf, Error: %f\n", iter, time, err);
+        printf("Iteration: %d, Time: %lf, Change: %d\n", iter, time, change);
 }
 
 struct kmeans_state
@@ -92,12 +92,13 @@ struct kmeans_state
 static void point_all_ctrs(
         float *vectors,
         unsigned i,
-        struct kmeans_state *state,
-        double *e
+        struct kmeans_state *state
 )
 {
     // Update assignment
     float min_dist = FLT_MAX;
+    float min_dist_p = FLT_MAX;
+
     unsigned char min_dist_index = 0;
     for (unsigned c = 0; c < state->K; c++)
     {
@@ -106,49 +107,34 @@ static void point_all_ctrs(
                 state->vect_dim);
         if (tmp_dist < min_dist)
         {
+            min_dist_p = min_dist;
             min_dist = tmp_dist;
             min_dist_index = c;
         }
+        else if (tmp_dist < min_dist_p)
+            min_dist_p = tmp_dist;
     }
-    *e = min_dist;
     state->assignment[i] = min_dist_index;
 
     // Update upper bound
-    state->upper_bounds[i] = distance(vectors + i * state->vect_dim,
-            state->centroids + min_dist_index * state->vect_dim,
-            state->vect_dim);
+    state->upper_bounds[i] = min_dist;
 
     // Update lower bound
-    min_dist = 0;
-    for (unsigned c = 0; c < state->K; c++)
-    {
-        if (c == min_dist_index)
-            continue;
-float tmp_dist = distance(vectors + i * state->vect_dim,
-                state->centroids + c * state->vect_dim,
-                state->vect_dim);
-        if (tmp_dist < min_dist)
-            min_dist = tmp_dist;
-    }
-    state->lower_bounds[i] = min_dist;
+    state->lower_bounds[i] = min_dist_p;
 }
 
 static void move_centers(struct kmeans_state *state)
 {
+    // Make a copy of current centroid
+    float *old_centroid = calloc(state->vect_dim, sizeof(float));
     for (unsigned c = 0; c < state->K; c++)
     {
-        // Make a copy of current centroid
-        float *old_centroid = calloc(state->vect_dim, sizeof(float));
-        for (unsigned d = 0; d < state->vect_dim; d++)
-        {
-            old_centroid[d] = state->centroids[c * state->vect_dim + d];
-        }
-
         // Compute new centroid
         for (unsigned d = 0; d < state->vect_dim; d++)
         {
+            old_centroid[d] = state->centroids[c * state->vect_dim + d];
             unsigned count = state->centroids_count[c];
-            float value = state->centroids[c * state->vect_dim + d] / count;
+            float value = state->centroids_sum[c * state->vect_dim + d] / count;
             state->centroids[c * state->vect_dim + d] = value;
         }
 
@@ -156,51 +142,43 @@ static void move_centers(struct kmeans_state *state)
         state->p[c] = distance(old_centroid,
                 state->centroids + c * state->vect_dim,
                 state->vect_dim);
-
-        free(old_centroid);
     }
+    free(old_centroid);
 }
 
 static void update_bounds(struct kmeans_state *state)
 {
-    // r = argmax(p(c))
-    float max = 0;
-    unsigned max_index = 0;
+    float max_shift = 0;
+    float max_shift_p = 0;
+    // r
+    unsigned char max_shift_index = 0;
+    // r'
+    unsigned char max_shift_p_index = 0;
+
     for (unsigned c = 0; c < state->K; c++)
     {
-        float max_tmp = state->p[c];
-        if (max_tmp > max)
+        float tmp_shift = state->p[c];
+        if (tmp_shift > max_shift)
         {
-            max = max_tmp;
-            max_index = c;
+            max_shift_p_index = max_shift_index;
+            max_shift_index = c;
+            max_shift_p = max_shift;
+            max_shift = tmp_shift;
+        }
+        else if (tmp_shift > max_shift_p)
+        {
+            max_shift_p = tmp_shift;
+            max_shift_p_index = c;
         }
     }
-    unsigned r = max_index;
-
-    // r_prime = argmax(p(c)) c != r
-    max = 0;
-    max_index = 0;
-    for (unsigned c = 0; c < state->K; c++)
-    {
-        if (c == r)
-            continue;
-
-        float max_tmp = state->p[c];
-        if (max_tmp > max)
-        {
-            max = max_tmp;
-            max_index = c;
-        }
-    }
-    unsigned r_prime = max_index;
 
     for (unsigned i = 0; i < state->vect_count; i++)
     {
         state->upper_bounds[i] += state->p[state->assignment[i]];
-        if (r == state->assignment[i])
-            state->lower_bounds[i] -= state->p[r_prime];
+        if (max_shift_index == state->assignment[i])
+            state->lower_bounds[i] -= state->p[max_shift_p_index];
         else
-            state->lower_bounds[i] -= state->p[r];
+            state->lower_bounds[i] -= state->p[max_shift_index];
     }
 }
 
@@ -220,6 +198,7 @@ unsigned char *Kmeans(
         unsigned max_iter
 )
 {
+    min_err += 1;
     // Init state and allocate memory
     struct kmeans_state *state = calloc(1, sizeof(struct kmeans_state));
     state->K = K;
@@ -229,25 +208,19 @@ unsigned char *Kmeans(
     state->centroids = calloc(K * vect_dim, sizeof(float)); // c
     state->centroids_sum = calloc(K * vect_dim, sizeof(float)); // c'
     state->centroids_count = calloc(K, sizeof(unsigned)); // q
-    state->upper_bounds = calloc(vect_count, sizeof(float)); // u
+    state->upper_bounds = malloc(vect_count * sizeof(float)); // u
     state->lower_bounds = calloc(vect_count, sizeof(float)); // l
     state->p = calloc(K, sizeof(float)); // p
     state->s = calloc(K, sizeof(float)); // s
 
     unsigned iter = 0;
-    double e = 0;
-    double diffErr = DBL_MAX;
-    double err = DBL_MAX;
-    double *min_dist = calloc(vect_count, sizeof(double));
-
-
-    // Question: Initialize upper_bounds (with INFINITY values)  and assignment?
-    // Question: Is it a problem if I use one array of both c and c'?
+    unsigned change_cluster = 1;
 
     // Init randomly the centers.
     int *centroids_index = calloc(state->K, sizeof(int));
     for (int i = 0; i < state->K; i++)
     {
+        state->s[i] = FLT_MAX;
         centroids_index[i] = rand() / (RAND_MAX + 1.) * vect_count;
         // Check that the given index is unique in the array.
         for (int j = 0; j < i; j++)
@@ -256,7 +229,7 @@ unsigned char *Kmeans(
             // choose another value (restart the loop from i)
             if (centroids_index[i] == centroids_index[j])
             {
-                i -= 1;
+                i--;
                 break;
             }
         }
@@ -265,45 +238,41 @@ unsigned char *Kmeans(
     {
         float *c_vec = vectors + centroids_index[i] * state->vect_dim;
         for (unsigned j = 0; j < state->vect_dim; j++)
-            state->centroids_sum[i * state->vect_dim + j] = c_vec[j];
+            state->centroids[i * state->vect_dim + j] = c_vec[j];
     }
     free(centroids_index);
 
     // Initialize (Algorithm 2)
     for (unsigned i = 0; i < vect_count; i++)
     {
-        state->upper_bounds[i] = INFINITY;
-        point_all_ctrs(vectors, i, state, &e);
-        min_dist[i] = e;
-
+        state->upper_bounds[i] = FLT_MAX;
+        point_all_ctrs(vectors, i, state);
         unsigned char c = state->assignment[i];
         state->centroids_count[c]++;
 
         for (unsigned d = 0; d < vect_dim; d++)
-            state->centroids[c * vect_dim + d] += vectors[i * vect_dim + d];
+            state->centroids_sum[c * vect_dim + d] += vectors[i * vect_dim + d];
     }
 
     // Main loop
-    while ((iter < max_iter) && (diffErr > min_err))
+    while ((iter < max_iter) && change_cluster)
     {
+        if (iter)
+            change_cluster = 0;
         double t1 = omp_get_wtime();
-        diffErr = err;
-        err = 0;
         // Update s
         for (unsigned c1 = 0; c1 < K; c1++)
         {
-            float min = 0;
-            for (unsigned c2 = 0; c2 < K; c2++)
+            for (unsigned c2 = c1 + 1; c2 < K; c2++)
             {
-                if (c1 == c2)
-                    continue;
-
                 float min_tmp = distance(state->centroids + c1 * vect_dim,
                         state->centroids + c2 * vect_dim,
                         vect_dim);
-                min = (min_tmp < min) ? min_tmp : min;
+                if (min_tmp < state->s[c1])
+                    state->s[c1] = min_tmp;
+                if (min_tmp < state->s[c2])
+                    state->s[c2] = min_tmp;
             }
-            state->s[c1] = min;
         }
 
         // Update centroids if necessary
@@ -323,31 +292,29 @@ unsigned char *Kmeans(
                 if (state->upper_bounds[i] > m)
                 {
                     unsigned char old_assignment = state->assignment[i];
-                    point_all_ctrs(vectors, i, state, &e);
-                    min_dist[i] = e;
+                    point_all_ctrs(vectors, i, state);
                     unsigned char curr_assignment = state->assignment[i];
 
                     // Update centroids
                     if (old_assignment != curr_assignment)
                     {
+                        change_cluster++;
                         state->centroids_count[old_assignment]--;
                         state->centroids_count[curr_assignment]++;
                         for (unsigned d = 0; d < vect_dim; d++)
                         {
                             float value = vectors[i * vect_dim + d];
-                            state->centroids[old_assignment * vect_dim + d] -= value;
-                            state->centroids[curr_assignment * vect_dim + d] += value;
+                            state->centroids_sum[old_assignment * vect_dim + d] -= value;
+                            state->centroids_sum[curr_assignment * vect_dim + d] += value;
                         }
                     }
                 }
             }
         }
-        for (unsigned i = 0; i < state->vect_count; i++)
-            err += min_dist[i];
-        err /= state->vect_count;
+        for (unsigned j = 0; j < state->K; j++)
+            state->s[j] = FLT_MAX;
         double t2 = omp_get_wtime();
-        diffErr = fabs(diffErr - err);
-        print_result(iter, t2 - t1, err);
+        print_result(iter, t2 - t1, change_cluster);
         move_centers(state);
         update_bounds(state);
         iter += 1;
