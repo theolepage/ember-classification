@@ -296,11 +296,10 @@ unsigned char *kmeans(
                 // Second bound test
                 if (state->upper_bounds[i] > m)
                 {
+                    // Update assignments
                     unsigned char old_assignment = state->assignment[i];
                     point_all_ctrs(vectors, i, state);
                     unsigned char curr_assignment = state->assignment[i];
-
-                    // Update centroids
                     if (old_assignment != curr_assignment)
                     {
                         change_cluster++;
@@ -323,8 +322,11 @@ unsigned char *kmeans(
             }
         }
         float max_moved = move_centers(state);
+
+        // Update bounds
         update_bounds(state, max_moved);
 
+        // Reset / prepare for next iteration
         for (unsigned j = 0; j < state->K; j++)
             state->s[j] = FLT_MAX;
         memcpy(state->centroids, state->centroids_next,
