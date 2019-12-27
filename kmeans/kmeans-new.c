@@ -217,20 +217,18 @@ static void init_centroids(float *vectors, struct kmeans_state *state)
 }
 
 /**
-** \brief Run k-means algorithm (Hamerly's version).
+** \brief Initialize the kmeans_state struct.
 ** \param vectors The feature vectors data.
 ** \param vect_count The number of feature vectors.
 ** \param vect_dim The number of features (dimension of vectors).
 ** \param K The number of clusters.
-** \param max_iter The number of maximum iterations.
+** \return state a pointer to the kmeans_state struct created.
 **/
-unsigned char *kmeans(
+struct kmeans_state *init_state(
         float *vectors,
         unsigned vect_count,
         unsigned vect_dim,
-        unsigned char K,
-        unsigned max_iter
-)
+        unsigned char K)
 {
     // Init state and allocate memory
     struct kmeans_state *state = calloc(1, sizeof(struct kmeans_state));
@@ -246,9 +244,50 @@ unsigned char *kmeans(
     state->p = calloc(K, sizeof(float));
     state->s = calloc(K, sizeof(float));
 
+    return state;
+}
+
+/**
+** \brief Free the allocated memory for state.
+** \param state A pointer to the struct kmeans_state to free.
+**/
+void free_state(struct kmeans_state *state)
+{
+    // Free state memory
+    free(state->centroids);
+    free(state->centroids_next);
+    free(state->centroids_count);
+    free(state->upper_bounds);
+    free(state->lower_bounds);
+    free(state->p);
+    free(state->s);
+    free(state);
+}
+
+/**
+** \brief Run k-means algorithm (Hamerly's version).
+** \param vectors The feature vectors data.
+** \param vect_count The number of feature vectors.
+** \param vect_dim The number of features (dimension of vectors).
+** \param K The number of clusters.
+** \param max_iter The number of maximum iterations.
+**/
+unsigned char *kmeans(
+        float *vectors,
+        unsigned vect_count,
+        unsigned vect_dim,
+        unsigned char K,
+        unsigned max_iter
+)
+{
+    struct kmeans_state *state = init_state(vectors, vect_count, vect_dim, K);
     // Initialize
-    init_centroids(vectors, state);
+    //init_centroids(vectors, state);
+    kmeanspp(float *vectors, struct kmeans_state *state);
+
     state->centroids_count[0] = vect_count;
+    // DOMMAGE DE TOUT REMMETRE DANS 0 ALORS QUE LES DISTANCES SONT DEJA CALCULEES.
+
     for (unsigned i = 0; i < vect_count; i++)
         state->upper_bounds[i] = FLT_MAX;
     for (unsigned c = 0; c < K; c++)
@@ -277,7 +316,6 @@ unsigned char *kmeans(
                     state->s[c2] = min_tmp;
             }
         }
-
 
         // Apply k-means algorithm for each vector
         for (unsigned i = 0; i < vect_count; i++)
@@ -337,17 +375,8 @@ unsigned char *kmeans(
         print_result(iter, t2 - t1, change_cluster);
         iter += 1;
     }
-
-    // Free state memory
     unsigned char *res = state->assignment;
-    free(state->centroids);
-    free(state->centroids_next);
-    free(state->centroids_count);
-    free(state->upper_bounds);
-    free(state->lower_bounds);
-    free(state->p);
-    free(state->s);
-    free(state);
+    free_state(state);
 
     return res;
 }

@@ -18,4 +18,8 @@ struct kmeans_state
     float *s;
 };
 
+double distance(float *vec1, float *vec2, unsigned dim);
+
+void kmeanspp(float *vectors, struct kmeans_state *state);
+
 #endif /* ! KMEANS_H */
