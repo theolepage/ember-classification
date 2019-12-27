@@ -186,34 +186,49 @@ static void update_bounds(struct kmeans_state *state, float max_moved)
 }
 
 /**
-** \brief Initialize centroids before k-means algorithm.
-** \param vectors The feature vectors data.
-** \param state A pointer to the struct representing algorithm's state.
+** \brief Initialize the kmeans_state struct.
+** \param vect_count The number of feature vectors.
+** \param vect_dim The number of features (dimension of vectors).
+** \param K The number of clusters.
+** \return state a pointer to the kmeans_state struct created.
 **/
-static void init_centroids(float *vectors, struct kmeans_state *state)
+struct kmeans_state *init_state(
+        unsigned vect_count,
+        unsigned vect_dim,
+        unsigned char K)
 {
-    int *centroids_index = calloc(state->K, sizeof(int));
-    for (int i = 0; i < state->K; i++)
-    {
-        centroids_index[i] = rand() / (RAND_MAX + 1.) * state->vect_count;
+    // Init state and allocate memory
+    struct kmeans_state *state = calloc(1, sizeof(struct kmeans_state));
+    state->K = K;
+    state->vect_count = vect_count;
+    state->vect_dim = vect_dim;
+    state->assignment = calloc(vect_count, sizeof(unsigned char));
+    state->centroids = calloc(K * vect_dim, sizeof(float));
+    state->centroids_next = calloc(K * vect_dim, sizeof(float));
+    state->centroids_count = calloc(K, sizeof(unsigned));
+    state->upper_bounds = malloc(vect_count * sizeof(float));
+    state->lower_bounds = calloc(vect_count, sizeof(float));
+    state->p = calloc(K, sizeof(float));
+    state->s = calloc(K, sizeof(float));
 
-        // Check that the given index is unique in the array.
-        for (int j = 0; j < i; j++)
-        {
-            if (centroids_index[i] == centroids_index[j])
-            {
-                i--;
-                break;
-            }
-        }
-    }
-    for (int i = 0; i < state->K; i++)
-    {
-        float *c_vec = vectors + centroids_index[i] * state->vect_dim;
-        for (unsigned j = 0; j < state->vect_dim; j++)
-            state->centroids[i * state->vect_dim + j] = c_vec[j];
-    }
-    free(centroids_index);
+    return state;
+}
+
+/**
+** \brief Free the allocated memory for state.
+** \param state A pointer to the struct kmeans_state to free.
+**/
+void free_state(struct kmeans_state *state)
+{
+    // Free state memory
+    free(state->centroids);
+    free(state->centroids_next);
+    free(state->centroids_count);
+    free(state->upper_bounds);
+    free(state->lower_bounds);
+    free(state->p);
+    free(state->s);
+    free(state);
 }
 
 /**
@@ -232,22 +247,9 @@ unsigned char *kmeans(
         unsigned max_iter
 )
 {
-    // Init state and allocate memory
-    struct kmeans_state *state = calloc(1, sizeof(struct kmeans_state));
-    state->K = K;
-    state->vect_count = vect_count;
-    state->vect_dim = vect_dim;
-    state->assignment = calloc(vect_count, sizeof(unsigned char));
-    state->centroids = calloc(K * vect_dim, sizeof(float));
-    state->centroids_next = calloc(K * vect_dim, sizeof(float));
-    state->centroids_count = calloc(K, sizeof(unsigned));
-    state->upper_bounds = malloc(vect_count * sizeof(float));
-    state->lower_bounds = calloc(vect_count, sizeof(float));
-    state->p = calloc(K, sizeof(float));
-    state->s = calloc(K, sizeof(float));
-
     // Initialize
-    init_centroids(vectors, state);
+    struct kmeans_state *state = init_state(vect_count, vect_dim, K);
+    kmeanspp(vectors, state);
     state->centroids_count[0] = vect_count;
     for (unsigned i = 0; i < vect_count; i++)
         state->upper_bounds[i] = FLT_MAX;
@@ -277,7 +279,6 @@ unsigned char *kmeans(
                     state->s[c2] = min_tmp;
             }
         }
-
 
         // Apply k-means algorithm for each vector
         for (unsigned i = 0; i < vect_count; i++)
@@ -337,17 +338,8 @@ unsigned char *kmeans(
         print_result(iter, t2 - t1, change_cluster);
         iter += 1;
     }
-
-    // Free state memory
     unsigned char *res = state->assignment;
-    free(state->centroids);
-    free(state->centroids_next);
-    free(state->centroids_count);
-    free(state->upper_bounds);
-    free(state->lower_bounds);
-    free(state->p);
-    free(state->s);
-    free(state);
+    free_state(state);
 
     return res;
 }

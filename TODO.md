@@ -2,8 +2,7 @@
 
 ## K-means
 
-- [ ] Refactor / doc / simple optis / clean code (Theo, Arielle)
-- [ ] K-means++ (Theo, Arielle)
+- [ ] Clean code + small optimisations (avoir square root, keep data after kmeanspp)
 - [ ] Use OpenMP / SMID (Brian, QD)
 
 ## Python part
