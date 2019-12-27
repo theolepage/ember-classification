@@ -149,6 +149,7 @@ static float move_centers(struct kmeans_state *state)
     for (unsigned c = 0; c < state->K; c++)
     {
         // Compute new centroid centers
+        #pragma omp parallel for
         for (unsigned d = 0; d < state->vect_dim; d++)
         {
             float count = state->centroids_count[c];
@@ -178,6 +179,7 @@ static float move_centers(struct kmeans_state *state)
 **/
 static void update_bounds(struct kmeans_state *state, float max_moved)
 {
+    #pragma omp parallel for
     for (unsigned i = 0; i < state->vect_count; i++)
     {
         state->upper_bounds[i] += state->p[state->assignment[i]];
@@ -210,6 +212,7 @@ static void init_centroids(float *vectors, struct kmeans_state *state)
     for (int i = 0; i < state->K; i++)
     {
         float *c_vec = vectors + centroids_index[i] * state->vect_dim;
+        #pragma omp parallel for
         for (unsigned j = 0; j < state->vect_dim; j++)
             state->centroids[i * state->vect_dim + j] = c_vec[j];
     }
@@ -249,6 +252,8 @@ unsigned char *kmeans(
     // Initialize
     init_centroids(vectors, state);
     state->centroids_count[0] = vect_count;
+
+    #pragma omp parallel for
     for (unsigned i = 0; i < vect_count; i++)
         state->upper_bounds[i] = FLT_MAX;
     for (unsigned c = 0; c < K; c++)
@@ -366,6 +371,8 @@ int main(int argc, char *argv[])
     unsigned vect_count = atoi(argv[5]);
     char *input = argv[6];
     char *output = argv[7];
+
+    omp_set_num_threads(omp_get_num_procs());
 
     // Run K-means algorithm
     printf("Start Kmeans on %s datafile [K = %d, dim = %d, nbVec = %d]\n",

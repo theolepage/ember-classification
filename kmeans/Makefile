@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -Wall -Wextra -Werror -std=c99 -pedantic -O3
+CFLAGS= -Wall -Wextra -Werror -std=c99 -pedantic -O3 -fopenmp
 LDFLAGS= -fopenmp
 LDLIBS= -lm
 
