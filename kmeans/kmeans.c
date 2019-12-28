@@ -251,21 +251,21 @@ unsigned char *kmeans(
 {
     // Initialize
     struct kmeans_state *state = init_state(vect_count, vect_dim, K);
-    kmeanspp(vectors, state);
     state->centroids_count[0] = vect_count;
-    for (unsigned i = 0; i < vect_count; i++)
-        state->upper_bounds[i] = FLT_MAX;
+    kmeanspp(vectors, state);
     for (unsigned c = 0; c < K; c++)
         state->s[c] = FLT_MAX;
 
     unsigned iter = 0;
-    unsigned change_cluster = 1;
+    unsigned error = vect_count * 5 / 100;
+    unsigned change_cluster = error + 1;
 
     // Main loop
-    while (iter < max_iter && change_cluster)
+    while (iter < max_iter && change_cluster > error)
     {
         double t1 = omp_get_wtime();
-        change_cluster = 0;
+        if (iter != 0)
+            change_cluster = 0;
 
         // Update shortest distance between each two cluster
         for (unsigned c1 = 0; c1 < K; c1++)
