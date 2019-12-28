@@ -149,7 +149,6 @@ static float move_centers(struct kmeans_state *state)
     for (unsigned c = 0; c < state->K; c++)
     {
         // Compute new centroid centers
-        #pragma omp parallel for
         for (unsigned d = 0; d < state->vect_dim; d++)
         {
             float count = state->centroids_count[c];
@@ -179,7 +178,6 @@ static float move_centers(struct kmeans_state *state)
 **/
 static void update_bounds(struct kmeans_state *state, float max_moved)
 {
-    #pragma omp parallel for
     for (unsigned i = 0; i < state->vect_count; i++)
     {
         state->upper_bounds[i] += state->p[state->assignment[i]];
@@ -212,7 +210,6 @@ static void init_centroids(float *vectors, struct kmeans_state *state)
     for (int i = 0; i < state->K; i++)
     {
         float *c_vec = vectors + centroids_index[i] * state->vect_dim;
-        #pragma omp parallel for
         for (unsigned j = 0; j < state->vect_dim; j++)
             state->centroids[i * state->vect_dim + j] = c_vec[j];
     }
@@ -253,17 +250,17 @@ unsigned char *kmeans(
     init_centroids(vectors, state);
     state->centroids_count[0] = vect_count;
 
-    #pragma omp parallel for
     for (unsigned i = 0; i < vect_count; i++)
         state->upper_bounds[i] = FLT_MAX;
     for (unsigned c = 0; c < K; c++)
         state->s[c] = FLT_MAX;
 
     unsigned iter = 0;
-    unsigned change_cluster = 1;
+    unsigned error = vect_count * 0.05;
+    unsigned change_cluster = error + 1;
 
     // Main loop
-    while (iter < max_iter && change_cluster)
+    while (iter < max_iter && change_cluster > error)
     {
         double t1 = omp_get_wtime();
         change_cluster = 0;
