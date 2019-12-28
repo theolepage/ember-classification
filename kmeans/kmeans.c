@@ -104,20 +104,20 @@ static inline void print_result(int iter, double time, unsigned change)
 ** \param i The index of the current vector.
 ** \param state A pointer to the struct representing algorithm's state.
 **/
-static void point_all_ctrs(
+double point_all_ctrs(
         float *vectors,
         unsigned i,
         struct kmeans_state *state
 )
 {
-    float min_dist = FLT_MAX;
-    float min_dist_p = FLT_MAX;
+    double min_dist = FLT_MAX;
+    double min_dist_p = FLT_MAX;
     unsigned char min_dist_index = 0;
 
     // Find the two closest centroids
     for (unsigned c = 0; c < state->K; c++)
     {
-        float tmp_dist = distance(vectors + i * state->vect_dim,
+        double tmp_dist = distance(vectors + i * state->vect_dim,
                 state->centroids + c * state->vect_dim,
                 state->vect_dim);
 
@@ -135,6 +135,8 @@ static void point_all_ctrs(
     state->upper_bounds[i] = min_dist;
     state->assignment[i] = min_dist_index;
     state->lower_bounds[i] = min_dist_p;
+
+    return min_dist;
 }
 
 /**

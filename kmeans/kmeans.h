@@ -22,4 +22,9 @@ double distance(float *vec1, float *vec2, unsigned dim);
 
 void kmeanspp(float *vectors, struct kmeans_state *state);
 
+double point_all_ctrs(
+        float *vectors,
+        unsigned i,
+        struct kmeans_state *state);
+
 #endif /* ! KMEANS_H */
