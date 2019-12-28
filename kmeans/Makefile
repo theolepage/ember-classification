@@ -4,7 +4,7 @@ LDFLAGS= -fopenmp
 LDLIBS= -lm
 
 BIN=kmeans
-OBJ=kmeans.o kmeanspp.o
+OBJ=kmeans.o
 
 all: $(BIN)
 
