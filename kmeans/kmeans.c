@@ -13,17 +13,21 @@
 ** \param vec1 The first vector.
 ** \param vec2 The second vector.
 ** \param dim The dimension of both vectors.
+** \param disable_sqrt If set to 1, return the distance without applying sqrt.
 ** \return The distance between vec1 and vec2.
 **/
-double distance(float *vec1, float *vec2, unsigned dim)
+double distance(float *vec1, float *vec2, unsigned dim, int disable_sqrt)
 {
     double dist = 0;
-    for(unsigned i = 0; i < dim; ++i, ++vec1, ++vec2)
+#pragma omp simd reduction(+: dist)
+    for(unsigned i = 0; i < dim; ++i)
     {
         double d = *vec1 - *vec2;
         dist += d * d;
+        vec1++;
+        vec2++;
     }
-    return sqrt(dist);
+    return disable_sqrt ? dist : sqrt(dist);
 }
 
 /**
@@ -101,7 +105,7 @@ static float move_centers(struct kmeans_state *state)
         // Compute distance between old and new centroid
         state->p[c] = distance(old_centroid,
                 state->centroids + c * state->vect_dim,
-                state->vect_dim);
+                state->vect_dim, 0);
 
         // Update max_moved
         if (state->p[c] > max_moved)
@@ -177,8 +181,8 @@ unsigned char *kmeans(
     // Initialize
     struct kmeans_state *state = init_state(vect_count, vect_dim, K);
     state->centroids_count[0] = vect_count;
-    init_random_centroids(vectors, state);
-    //kmeanspp(vectors, state);
+    //init_random_centroids(vectors, state);
+    kmeanspp(vectors, state);
 
 #pragma omp parallel
     {
@@ -215,7 +219,7 @@ unsigned char *kmeans(
             {
                 float min_tmp = distance(state->centroids + c1 * vect_dim,
                         state->centroids + c2 * vect_dim,
-                        vect_dim);
+                        vect_dim, 0);
                 if (min_tmp < state->s[c1])
                     state->s[c1] = min_tmp;
                 if (min_tmp < state->s[c2])
@@ -242,7 +246,7 @@ unsigned char *kmeans(
                     // Tighten upper bound
                     state->upper_bounds[i] = distance(vectors + i * vect_dim,
                             state->centroids + state->assignment[i] * vect_dim,
-                            state->vect_dim);
+                            state->vect_dim, 0);
 
                     // Second bound test
                     if (state->upper_bounds[i] > m)
@@ -252,11 +256,12 @@ unsigned char *kmeans(
                         unsigned char min_dist_index = 0;
 
                         // Find the two closest centroids
+                        //double tt1 = omp_get_wtime();
                         for (unsigned c = 0; c < state->K; c++)
                         {
                             float tmp_dist = distance(vectors + i * state->vect_dim,
                                     state->centroids + c * state->vect_dim,
-                                    state->vect_dim);
+                                    state->vect_dim, 1);
 
                             if (tmp_dist < min_dist_first)
                             {
@@ -267,6 +272,8 @@ unsigned char *kmeans(
                             else if (tmp_dist < min_dist_second)
                                 min_dist_second = tmp_dist;
                         }
+                        //double tt2 = omp_get_wtime();
+                        //printf("time: %lf\n", tt2 - tt1);
 
                         // Update vector i assignment
                         // min_dist_index = new assignment
@@ -289,10 +296,10 @@ unsigned char *kmeans(
                             }
 
                             state->assignment[i] = min_dist_index;
-                            state->upper_bounds[i] = min_dist_first;
+                            state->upper_bounds[i] = sqrt(min_dist_first);
                         }
 
-                        state->lower_bounds[i] = min_dist_second;
+                        state->lower_bounds[i] = sqrt(min_dist_second);
                     }
                 }
             }
@@ -320,6 +327,8 @@ unsigned char *kmeans(
 
         // Update centroids and bounds
         float max_moved = move_centers(state);
+
+#pragma omp parallel for
         for (unsigned i = 0; i < state->vect_count; i++)
         {
             state->upper_bounds[i] += state->p[state->assignment[i]];

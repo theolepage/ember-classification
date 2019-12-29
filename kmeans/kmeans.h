@@ -26,7 +26,7 @@ unsigned char *kmeans(
         unsigned max_iter
 );
 
-double distance(float *vec1, float *vec2, unsigned dim);
+double distance(float *vec1, float *vec2, unsigned dim, int disable_sqrt);
 
 // Init methods
 void init_random_centroids(float *vectors, struct kmeans_state *state);

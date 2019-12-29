@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <float.h>
 #include <time.h>
+#include <omp.h>
 
 #include "kmeans.h"
 
@@ -58,6 +59,7 @@ void kmeanspp(float *vectors, struct kmeans_state *state)
         unsigned max_dist_index = 0;
 
         // For each vector of the data set
+#pragma omp parallel for schedule(guided, 10)
         for (unsigned i = 0; i < state->vect_count; i++)
         {
             float *point = vectors + i * dim;
@@ -67,7 +69,7 @@ void kmeanspp(float *vectors, struct kmeans_state *state)
             for (unsigned j = 0; j < center; j++)
             {
                 float *center_compared = state->centroids + j * dim;
-                double dist = distance(point, center_compared, dim);
+                double dist = distance(point, center_compared, dim, 1);
                 if (dist < min_dist)
                 {
                     min_dist = dist;
