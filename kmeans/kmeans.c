@@ -217,7 +217,7 @@ unsigned char *kmeans(
         state->s[c] = FLT_MAX;
 
     unsigned iter = 0;
-    unsigned min_error = vect_count * 0.005;
+    unsigned min_error = vect_count * 0.001;
     unsigned change_cluster = min_error + 1;
 
     // Main loop
