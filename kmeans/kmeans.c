@@ -47,58 +47,31 @@ static inline void print_result(int iter, double time, unsigned change)
 ** \param i The index of the current vector.
 ** \param state A pointer to the struct representing algorithm's state.
 **/
-static void point_all_ctrs(
+/*static void point_all_ctrs(
         float *vectors,
         unsigned i,
         struct kmeans_state *state,
         unsigned *change_cluster
 )
-{
-    float min_dist_first = FLT_MAX;
-    float min_dist_second = FLT_MAX;
-    unsigned char min_dist_index = 0;
-
-    // Find the two closest centroids
-    for (unsigned c = 0; c < state->K; c++)
+{*/
+    /*
+unsigned tmp_change_cluster = 0;
+#pragma omp parallel reduction(+: tmp_change_cluster)
     {
-        float tmp_dist = distance(vectors + i * state->vect_dim,
-                state->centroids + c * state->vect_dim,
-                state->vect_dim);
+        unsigned *change_cluster_thread = calloc(state->K, sizeof(unsigned));
+        float *centroids_sum_thread = calloc(state->K * state->vect_dim, sizeof(float));
+        unsigned *centroids_count_thread = calloc(state->K, sizeof(unsigned));
 
-        if (tmp_dist < min_dist_first)
-        {
-            min_dist_second = min_dist_first;
-            min_dist_first = tmp_dist;
-            min_dist_index = c;
-        }
-        else if (tmp_dist < min_dist_second)
-            min_dist_second = tmp_dist;
+
+
+        free(change_cluster_thread);
+        free(centroids_sum_thread);
+        free(centroids_count_thread);
     }
 
-    // Update vector i assignment
-    // min_dist_index = new assignment
-    if (min_dist_index != state->assignment[i])
-    {
-        (*change_cluster)++;
-        state->centroids_count[state->assignment[i]]--;
-        state->centroids_count[min_dist_index]++;
-
-        // Update centroids
-        for (unsigned d = 0; d < state->vect_dim; d++)
-        {
-            unsigned old_index = state->assignment[i] * state->vect_dim + d;
-            unsigned new_index = min_dist_index * state->vect_dim + d;
-            float val = vectors[i * state->vect_dim + d];
-            state->centroids_sum[old_index] -= val;
-            state->centroids_sum[new_index] += val;
-        }
-
-        state->assignment[i] = min_dist_index;
-        state->upper_bounds[i] = min_dist_first;
-    }
-
-    state->lower_bounds[i] = min_dist_second;
-}
+    *change_cluster += tmp_change_cluster;
+*/
+//}
 
 /**
 ** \brief Update centroids during k-means algorithm.
@@ -207,24 +180,33 @@ unsigned char *kmeans(
     init_random_centroids(vectors, state);
     //kmeanspp(vectors, state);
 
-    for (unsigned i = 0; i < vect_count; i++)
+#pragma omp parallel
     {
+        float *sum_thread = calloc(vect_dim, sizeof(float));
+#pragma omp for
+        for (unsigned i = 0; i < vect_count; i++)
+            for (unsigned d = 0; d < vect_dim; d++)
+               sum_thread[d] += vectors[i * vect_dim + d];
         for (unsigned d = 0; d < vect_dim; d++)
-            state->centroids_sum[d] += vectors[i * vect_dim + d];
-        state->upper_bounds[i] = FLT_MAX;
+#pragma omp atomic
+            state->centroids_sum[d] += sum_thread[d];
+        free(sum_thread);
     }
+    for (unsigned i = 0; i < vect_count; i++)
+        state->upper_bounds[i] = FLT_MAX;
     for (unsigned c = 0; c < K; c++)
         state->s[c] = FLT_MAX;
 
     unsigned iter = 0;
-    unsigned min_error = vect_count * 0.001;
-    unsigned change_cluster = min_error + 1;
+    //unsigned min_error = vect_count * 0.001;
+    //unsigned change_cluster = min_error + 1;
+    unsigned change_cluster = 0;
 
     // Main loop
-    while (iter < max_iter && change_cluster > min_error)
+    while (iter < max_iter && !change_cluster)
     {
         double t1 = omp_get_wtime();
-        change_cluster = 0;
+        change_cluster = 1;
 
         // Update shortest distance between each two cluster
         for (unsigned c1 = 0; c1 < K; c1++)
@@ -241,26 +223,99 @@ unsigned char *kmeans(
             }
         }
 
-        // Apply k-means algorithm for each vector
-        for (unsigned i = 0; i < vect_count; i++)
+#pragma omp parallel reduction(&: change_cluster)
         {
-            float m = fmax(state->s[state->assignment[i]] / 2,
-                    state->lower_bounds[i]);
+            unsigned *change_cluster_t = calloc(state->K, sizeof(unsigned));
+            float *centroids_sum_t = calloc(state->K * state->vect_dim, sizeof(float));
+            unsigned *centroids_count_t = calloc(state->K, sizeof(unsigned));
 
-            // First bound test
-            if (state->upper_bounds[i] > m)
+            // Apply k-means algorithm for each vector
+#pragma omp for schedule(guided, 10)
+            for (unsigned i = 0; i < vect_count; i++)
             {
-                // Tighten upper bound
-                state->upper_bounds[i] = distance(vectors + i * vect_dim,
-                        state->centroids + state->assignment[i] * vect_dim,
-                        state->vect_dim);
+                float m = fmax(state->s[state->assignment[i]] / 2,
+                        state->lower_bounds[i]);
 
-                // Second bound test
+                // First bound test
                 if (state->upper_bounds[i] > m)
                 {
-                    point_all_ctrs(vectors, i, state, &change_cluster);
+                    // Tighten upper bound
+                    state->upper_bounds[i] = distance(vectors + i * vect_dim,
+                            state->centroids + state->assignment[i] * vect_dim,
+                            state->vect_dim);
+
+                    // Second bound test
+                    if (state->upper_bounds[i] > m)
+                    {
+                        float min_dist_first = FLT_MAX;
+                        float min_dist_second = FLT_MAX;
+                        unsigned char min_dist_index = 0;
+
+                        // Find the two closest centroids
+                        for (unsigned c = 0; c < state->K; c++)
+                        {
+                            float tmp_dist = distance(vectors + i * state->vect_dim,
+                                    state->centroids + c * state->vect_dim,
+                                    state->vect_dim);
+
+                            if (tmp_dist < min_dist_first)
+                            {
+                                min_dist_second = min_dist_first;
+                                min_dist_first = tmp_dist;
+                                min_dist_index = c;
+                            }
+                            else if (tmp_dist < min_dist_second)
+                                min_dist_second = tmp_dist;
+                        }
+
+                        // Update vector i assignment
+                        // min_dist_index = new assignment
+                        if (min_dist_index != state->assignment[i])
+                        {
+                            change_cluster = 0;
+                            change_cluster_t[min_dist_index] = 1;
+                            change_cluster_t[state->assignment[i]] = 1;
+                            centroids_count_t[state->assignment[i]]--;
+                            centroids_count_t[min_dist_index]++;
+
+                            // Update centroids
+                            for (unsigned d = 0; d < state->vect_dim; d++)
+                            {
+                                unsigned old_index = state->assignment[i] * state->vect_dim + d;
+                                unsigned new_index = min_dist_index * state->vect_dim + d;
+                                float val = vectors[i * state->vect_dim + d];
+                                centroids_sum_t[old_index] -= val;
+                                centroids_sum_t[new_index] += val;
+                            }
+
+                            state->assignment[i] = min_dist_index;
+                            state->upper_bounds[i] = min_dist_first;
+                        }
+
+                        state->lower_bounds[i] = min_dist_second;
+                    }
                 }
             }
+
+            // Reduction
+            for (unsigned c = 0; c < K; c++)
+            {
+                if (change_cluster_t[c])
+                {
+#pragma omp atomic
+                    state->centroids_count[c] += centroids_count_t[c];
+                    for (unsigned d = 0; d < vect_dim; d++)
+                    {
+#pragma omp atomic
+                        state->centroids_sum[c * vect_dim + d] += centroids_sum_t[c * vect_dim + d];
+                    }
+                }
+            }
+
+            // Free thread memory
+            free(change_cluster_t);
+            free(centroids_sum_t);
+            free(centroids_count_t);
         }
 
         // Update centroids and bounds
