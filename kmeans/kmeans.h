@@ -9,7 +9,7 @@ struct kmeans_state
 
     unsigned char *assignment;
     float *centroids;
-    float *centroids_next;
+    float *centroids_sum;
     unsigned *centroids_count;
 
     float *upper_bounds;

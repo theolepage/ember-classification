@@ -12,7 +12,7 @@ $(BIN): $(OBJ)
 
 test: $(BIN)
 	rm -f out.dat
-	./kmeans 3 20 1.0 2351 900000 ../ember/Xtrain.dat out.dat
+	time ./kmeans 3 20 1.0 2351 900000 ../ember/Xtrain.dat out.dat;
 	python ../python/eval.py ../ember/Ytrain.dat out.dat
 
 clean:
