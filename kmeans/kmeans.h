@@ -18,6 +18,13 @@ struct kmeans_state
     float *s;
 };
 
+struct kmeans_thread
+{
+    unsigned *change_cluster_t;
+    float *centroids_sum_t;
+    unsigned *centroids_count_t;
+};
+
 unsigned char *kmeans(
         float *vectors,
         unsigned vect_count,
