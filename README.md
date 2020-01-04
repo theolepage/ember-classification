@@ -37,7 +37,7 @@ Jupyter notebooks and .py source files are located in specific subfolders. Howev
 ### Step 3: Classification using Deep Neural Network
 
 - Path: `python/step3-deep_neural_network`
-- Google Colab: []()
+- Google Colab: [https://colab.research.google.com/drive/1TwfyeQhqQqtxPH224KzFxeUSDagQE9Mp](https://colab.research.google.com/drive/1TwfyeQhqQqtxPH224KzFxeUSDagQE9Mp)
 
 ## Bonus
 
