@@ -9,19 +9,13 @@ Dataset: https://drive.google.com/open?id=1e6X56yLlmXzaeavJ-Nn8oG2kEtCHnC4T
 
 ### Usage
 
-To launch the kmeans please type the folowing commands:
+To run kmeans on the dataset and check the accuracy:
 ```
-cd kmeans
-make
-./kmeans 3 20 1.0 2351 200000 /afs/cri/resources/teach/LSE-IA/ember/Xtest.dat out.dat
+cd kmeans/
+make test
 ```
 
-To check the accuracy (if you are in kmeans directory):
-```
-cd ../python
-pip install -r requirements.txt --user
-python eval.py ../out.dat  /afs/cri/resources/teach/LSE-IA/ember/Ytrain.dat
-```
+To run kmeans only, type the folowing command: `./kmeans 3 20 1.0 2351 200000 /afs/cri/resources/teach/LSE-IA/ember/Xtest.dat out.dat`
 
 ## Classifiers and neural networks
 
@@ -48,4 +42,4 @@ Jupyter notebooks and .py source files are located in specific subfolders. Howev
 ### Metric Learning: Siamese network
 
 - Path: `python/bonus_siamese_network`
-- Google Colab: []()
+- Google Colab: [https://colab.research.google.com/drive/1G2sZT-5-1WpdbVyL_Ic0qANF4iSpyg2F](https://colab.research.google.com/drive/1G2sZT-5-1WpdbVyL_Ic0qANF4iSpyg2F)
