@@ -9,13 +9,15 @@ Dataset: https://drive.google.com/open?id=1e6X56yLlmXzaeavJ-Nn8oG2kEtCHnC4T
 
 ### Usage
 
-To run kmeans on the dataset and check the accuracy:
+**You have to put the ember dataset in `ember/`.**  
+
+To run kmeans on the dataset and check its accuracy, follow the steps below.
 ```
 cd kmeans/
 make test
 ```
 
-To run kmeans only, type the folowing command: `./kmeans 3 20 1.0 2351 200000 /afs/cri/resources/teach/LSE-IA/ember/Xtest.dat out.dat`
+To run kmeans only, type the folowing command: `./kmeans 3 20 1.0 2351 900000 ../ember/Xtrain.dat out.dat`.
 
 ## Classifiers and neural networks
 
