@@ -32,7 +32,7 @@ Jupyter notebooks and .py source files are located in specific subfolders. Howev
 ### Step 2: Classification with machine learning
 
 - Path: `python/step2-classifier_machine_learning`
-- Google Colab: []()
+- Google Colab: [https://colab.research.google.com/drive/1EAA0eecyZ4oqouvi_dwydWBAa3sEV1uI](https://colab.research.google.com/drive/1EAA0eecyZ4oqouvi_dwydWBAa3sEV1uI)
 
 ### Step 3: Classification using Deep Neural Network
 
