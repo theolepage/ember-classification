@@ -48,4 +48,4 @@ Jupyter notebooks and .py source files are located in specific subfolders. Howev
 ### Metric Learning: Siamese network
 
 - Path: `python/bonus_siamese_network`
-- Google Colab: []()
+- Google Colab: [https://colab.research.google.com/drive/1G2sZT-5-1WpdbVyL_Ic0qANF4iSpyg2F](https://colab.research.google.com/drive/1G2sZT-5-1WpdbVyL_Ic0qANF4iSpyg2F)
